@@ -1,7 +1,7 @@
 /********************************************************************************
 ** Form generated from reading UI file 'mainwindow.ui'
 **
-** Created by: Qt User Interface Compiler version 5.5.1
+** Created by: Qt User Interface Compiler version 5.6.0
 **
 ** WARNING! All changes made in this file will be lost when recompiling UI file!
 ********************************************************************************/
@@ -24,7 +24,6 @@
 #include <QtWidgets/QTabWidget>
 #include <QtWidgets/QTextBrowser>
 #include <QtWidgets/QWidget>
-#include <mainwindow.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -56,7 +55,6 @@ public:
     QTextBrowser *status_browser;
     QMenuBar *menuBar;
     QMenu *menuMenu;
-    QMenu *menuSettings;
 
     void setupUi(QMainWindow *MainWindow)
     {
@@ -151,16 +149,10 @@ public:
         menuBar->setGeometry(QRect(0, 0, 900, 21));
         menuMenu = new QMenu(menuBar);
         menuMenu->setObjectName(QStringLiteral("menuMenu"));
-        menuSettings = new QMenu(menuBar);
-        menuSettings->setObjectName(QStringLiteral("menuSettings"));
         MainWindow->setMenuBar(menuBar);
 
         menuBar->addAction(menuMenu->menuAction());
-        menuBar->addAction(menuSettings->menuAction());
         menuMenu->addAction(actionExit);
-        menuSettings->addAction(actionConnect);
-        menuSettings->addAction(actionPreferences_2);
-        menuSettings->addAction(actionMute_Sounds);
 
         retranslateUi(MainWindow);
         QObject::connect(actionExit, SIGNAL(triggered()), MainWindow, SLOT(close()));
@@ -173,7 +165,7 @@ public:
 
     void retranslateUi(QMainWindow *MainWindow)
     {
-        MainWindow->setWindowTitle(QApplication::translate("MainWindow", "NADL Test Client", 0));
+        MainWindow->setWindowTitle(QApplication::translate("MainWindow", "NADL", 0));
         actionMenu->setText(QApplication::translate("MainWindow", "Exit", 0));
         actionPreferences->setText(QApplication::translate("MainWindow", "Preferences", 0));
         actionCommand_List->setText(QApplication::translate("MainWindow", "Command List", 0));
@@ -195,7 +187,6 @@ public:
 "<p style=\"-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;\"><br /></p></body></html>", 0));
         tabs->setTabText(tabs->indexOf(Status_Page), QApplication::translate("MainWindow", "Status", 0));
         menuMenu->setTitle(QApplication::translate("MainWindow", "Menu", 0));
-        menuSettings->setTitle(QApplication::translate("MainWindow", "Settings", 0));
     } // retranslateUi
 
 };

@@ -11,7 +11,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     channel = NULL;
     n_channels = 0;
 
-
     FILE *f = fopen("user","r");
     if (!f) {
         use_token = false;
@@ -26,7 +25,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         use_token = true;
         fclose(f);
     }
-
 
     setWindowFlags(Qt::Window | Qt::CustomizeWindowHint| Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint | Qt::WindowMinimizeButtonHint);
 
@@ -278,7 +276,7 @@ void MainWindow::redraw_game_list(const uint16_t channel_id) {
                 const int minutes = channel[channel_id]->games[x].start_time / 60000;
                 snprintf(str,sizeof(str),"%s (%s): %im",channel[channel_id]->games[x].game_name,channel[channel_id]->games[x].host_name,minutes);
             } else {
-                snprintf(str,sizeof(str),"%s (%s): %i/10",channel[channel_id]->games[x].game_name,channel[channel_id]->games[x].host_name,channel[channel_id]->games[x].n_users);
+                snprintf(str,sizeof(str),"%s (%s): %i/%i",channel[channel_id]->games[x].game_name,channel[channel_id]->games[x].host_name,channel[channel_id]->games[x].n_users,channel[channel_id]->games[x].n_max);
             }
             channel[channel_id]->channel_data->games_lists->addItem(str);
         }
@@ -348,10 +346,6 @@ Widget_Pointers *MainWindow::testtab(QWidget *tab_x, int tab_index){
     QListWidget *listWidget_x;// = new QListWidget; //games
     QListWidget *listWidget_y;// = new QListWidget; // ranks
     QListWidget *user_list_x;// = new QListWidget; //users
-
-
-
-
 
     //tab_x = new QWidget();
     ui->tabs->addTab(tab_x, QString("Test"));
@@ -583,7 +577,7 @@ void MainWindow::enter_chat() {
             ui->chat_input->setFocus();
             return;
         }
-        for (int y = 0; y < n_channels; ++y) {
+        for (uint y = 0; y < n_channels; ++y) {
             if (channel[y] && channel[y]->qt_tab_id == tab_index) {
                 printf("%i Clear this tab \n",y);
                 fflush(stdout);
@@ -655,7 +649,7 @@ void MainWindow::closeTab_(int index) {
 
     //send packet to say i am leaving chat tab
 
-    for (int x = 0; x < n_channels ; x++){
+    for (uint x = 0; x < n_channels ; x++){
         if (channel[x]->qt_tab_id == index){
             std::string msg = "/leave";
             chat_message_header header;
@@ -728,13 +722,13 @@ void MainWindow::update(){
                 if (position[0] >= 200) { // disconnect msg
                     if (position[0] == SERVER_MESSAGE_DISCONNECT_SERVER_SHUTDOWN) {
                         const char *dcmsg = "Disconnected from server. Server is shutting down. Please restart your client.";
-                        for (int x = 0; x < n_channels; ++x) {
+                        for (uint x = 0; x < n_channels; ++x) {
                             channel[x]->channel_data->browsers->append(dcmsg);
                         }
                         ui->status_browser->append(dcmsg);
                     } else if (position[0] == SERVER_MESSAGE_DISCONNECT_USER_LOGGED_IN_ELSEWHERE) {
                         const char *dcmsg = "Disconnected from server. User logged in elsewhere.";
-                        for (int x = 0; x < n_channels; ++x) {
+                        for (uint x = 0; x < n_channels; ++x) {
                             channel[x]->channel_data->browsers->append(dcmsg);
                         }
                         ui->status_browser->append(dcmsg);
@@ -854,7 +848,7 @@ void MainWindow::update(){
                                             ui->status_browser->append(msgbuffer);
                                         }
                                     }
-                                    for (int x = 0; x < n_channels; ++x) {
+                                    for (uint8_t x = 0; x < n_channels; ++x) {
                                         if (channel[x] && (channel[x]->channel_id == header.channel || header.msg_flags & MSG_FLAG_PRINTALL)) {
                                             channel[x]->channel_data->browsers->append(msgbuffer);
                                             /*
@@ -897,7 +891,7 @@ void MainWindow::update(){
                                 chat_user user_update;
                                 memcpy(&user_update, &position[1], sizeof(user_update));
 
-                                for (int x = 0; x < n_channels; ++x) {
+                                for (uint x = 0; x < n_channels; ++x) {
                                     if (channel[x] && channel[x]->channel_id == user_update.channel) {
                                         channel[x]->completer_list->clear();
                                         for (int y = 0; y < channel[x]->n_users; ++y) {
@@ -927,7 +921,7 @@ void MainWindow::update(){
                                 user_info user_update;
                                 memcpy(&user_update, &position[1], sizeof(user_update));
 
-                                for (int x = 0; x < n_channels; ++x) {
+                                for (uint x = 0; x < n_channels; ++x) {
                                     if (channel[x] && channel[x]->channel_id == user_update.channel_id) {
 
 
@@ -962,7 +956,7 @@ void MainWindow::update(){
                                 user_info update;
                                 memcpy(&update, &position[1], sizeof(update));
 
-                                for (int x = 0; x < n_channels; ++x) {
+                                for (uint x = 0; x < n_channels; ++x) {
                                     if (channel[x] && channel[x]->channel_id == update.channel_id) {
 
                                         for (int y = 0; y < channel[x]->n_users; ++y) {
@@ -1035,7 +1029,7 @@ void MainWindow::update(){
                             if (remaining_length > sizeof(uint16_t)) {
                                 uint16_t id;
                                 memcpy(&id, &position[1], sizeof(id));
-                                for (int x = 0; x < n_channels; ++x) {
+                                for (uint x = 0; x < n_channels; ++x) {
                                     if (channel[x] && channel[x]->channel_id == id) {
                                         n_tabs--;
                                         delete channel[x]->channel_data->browsers;

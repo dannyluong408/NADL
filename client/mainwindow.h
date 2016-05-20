@@ -19,13 +19,12 @@
 #include <QStringList>
 #include <QDebug>
 #include <QList>
-
 #include <string.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <time.h>
-#include "data_types.h"
-
+#include "data_types.hpp"
+#include <QTextBrowser>
 
 namespace Ui {
 class MainWindow;

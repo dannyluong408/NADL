@@ -23,17 +23,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string>NADL Test Client</string>
-  </property>
-  <property name="windowIcon">
-   <iconset resource="images.qrc">
-    <normaloff>:/oldguy.ico</normaloff>:/oldguy.ico</iconset>
-  </property>
-  <property name="autoFillBackground">
-   <bool>false</bool>
-  </property>
-  <property name="styleSheet">
-   <string notr="true"/>
+   <string>NADL</string>
   </property>
   <widget class="QWidget" name="centralWidget">
    <property name="minimumSize">
@@ -48,21 +38,9 @@
      <height>1080</height>
     </size>
    </property>
-   <property name="styleSheet">
-    <string notr="true">
-border-color: rgb(0, 0, 0);
-gridline-color: rgb(0, 0, 0);
-</string>
-   </property>
    <layout class="QGridLayout" name="gridLayout">
-    <item row="0" column="0" colspan="2">
-     <layout class="QHBoxLayout" name="horizontalLayout_2" stretch="0,0,0,0">
-      <item>
-       <widget class="QListWidget" name="listWidget"/>
-      </item>
-      <item>
-       <widget class="QListView" name="listView"/>
-      </item>
+    <item row="1" column="0" colspan="2">
+     <layout class="QHBoxLayout" name="horizontalLayout_2">
       <item>
        <widget class="QLineEdit" name="chat_input"/>
       </item>
@@ -71,6 +49,45 @@ gridline-color: rgb(0, 0, 0);
         <property name="text">
          <string>Send</string>
         </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item row="0" column="0" colspan="2">
+     <layout class="QHBoxLayout" name="horizontalLayout">
+      <item>
+       <widget class="QTabWidget" name="tabs">
+        <property name="currentIndex">
+         <number>0</number>
+        </property>
+        <property name="tabsClosable">
+         <bool>true</bool>
+        </property>
+        <widget class="QWidget" name="Status_Page">
+         <attribute name="title">
+          <string>Status</string>
+         </attribute>
+         <layout class="QHBoxLayout" name="horizontalLayout_6">
+          <item>
+           <layout class="QHBoxLayout" name="horizontalLayout_5">
+            <item>
+             <widget class="QTextBrowser" name="status_browser">
+              <property name="styleSheet">
+               <string notr="true"/>
+              </property>
+              <property name="html">
+               <string>&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0//EN&quot; &quot;http://www.w3.org/TR/REC-html40/strict.dtd&quot;&gt;
+&lt;html&gt;&lt;head&gt;&lt;meta name=&quot;qrichtext&quot; content=&quot;1&quot; /&gt;&lt;style type=&quot;text/css&quot;&gt;
+p, li { white-space: pre-wrap; }
+&lt;/style&gt;&lt;/head&gt;&lt;body style=&quot; font-family:'MS Shell Dlg 2'; font-size:8.25pt; font-weight:400; font-style:normal;&quot;&gt;
+&lt;p style=&quot;-qt-paragraph-type:empty; margin-top:0px; margin-bottom:0px; margin-left:0px; margin-right:0px; -qt-block-indent:0; text-indent:0px;&quot;&gt;&lt;br /&gt;&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
        </widget>
       </item>
      </layout>
@@ -92,16 +109,7 @@ gridline-color: rgb(0, 0, 0);
     </property>
     <addaction name="actionExit"/>
    </widget>
-   <widget class="QMenu" name="menuSettings">
-    <property name="title">
-     <string>Settings</string>
-    </property>
-    <addaction name="actionConnect"/>
-    <addaction name="actionPreferences_2"/>
-    <addaction name="actionMute_Sounds"/>
-   </widget>
    <addaction name="menuMenu"/>
-   <addaction name="menuSettings"/>
   </widget>
   <action name="actionMenu">
    <property name="text">
@@ -171,9 +179,7 @@ gridline-color: rgb(0, 0, 0);
   </action>
  </widget>
  <layoutdefault spacing="6" margin="11"/>
- <resources>
-  <include location="images.qrc"/>
- </resources>
+ <resources/>
  <connections>
   <connection>
    <sender>actionExit</sender>
