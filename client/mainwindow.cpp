@@ -11,6 +11,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     users[UINT32_MAX] = "SYSTEM";
     channel = NULL;
     n_channels = 0;
+    completer = NULL;
 
     FILE *f = fopen("user","r");
     if (!f) {
@@ -175,17 +176,19 @@ void MainWindow::updateCompleter(){
             tab_index = channel[x]->qt_tab_id;
         }
     }
+
+    delete completer;
     //updates the completer list every sec
-    QCompleter *completer = new QCompleter(*channel[tab_index-1]->completer_list, this);
+    completer = new QCompleter(*channel[tab_index-1]->completer_list, this);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     completer->setCompletionMode(QCompleter::InlineCompletion);
     ui->chat_input->setCompleter(completer);
+
 
     /*
     QStringList test;
     for(int i = 0; i < ((channel[tab_index-1]->channel_data->user_lists->count()) ); i++){
         test << (channel[tab_index-1]->channel_data->user_lists->item(i)->text() );
-
     }
     qDebug() << test;
     */
@@ -943,7 +946,7 @@ void MainWindow::update(){
                                 QString chan_n;
                                 chan_n = QString::fromStdString(new_channel.channel_name);
 
-                                QWidget *w = new QWidget;
+                                channel[n_channels]->w = new QWidget;
                                 const int temp = ui->tabs->addTab(w, chan_n);
                                 channel[n_channels]->channel_data = createTab(w);
                                 n_tabs++;
@@ -988,6 +991,7 @@ void MainWindow::update(){
                                         delete channel[x]->channel_data->hLayoutX;
 
                                         delete channel[x]->completer_list;
+                                        delete channel[x]->history_list;
                                         delete ui->tabs->widget(channel[x]->qt_tab_id);
 
                                         free(channel[x]->users);
