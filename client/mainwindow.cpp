@@ -2,6 +2,7 @@
 #include "ui_mainwindow.h"
 
 QStringList empty;
+bool upDown = false;
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWindow) {
     login_sent = 0;
@@ -30,7 +31,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     n_tabs = 0;
     ui->setupUi(this);
-
 
     Channel **ptr = (Channel**)malloc(sizeof(Channel*));
     memcpy(ptr, channel, sizeof(Channel**)*0);
@@ -93,7 +93,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
 }
 
-
 void MainWindow::moveDown(){
     int tab_index = ui->tabs->currentIndex();
     int z = 0, size = 9;
@@ -102,43 +101,30 @@ void MainWindow::moveDown(){
             z = x;
         }
     }
-    qDebug() << "Down Current History:" << channel[z]->current_history;
-    //printf("Curr History %d\n",channel[z]->current_history );
     fflush(stdout);
-
     if (channel[z]->history_list->size() != 9){
         if(channel[z]->history_list->isEmpty()){ //Checks if list is empty
-            //qDebug() << "List Empty";
             return;
         }
         else{
             size = channel[z]->history_list->size(); //Sets size to list size if there has not been 10 entries yet
-            //qDebug() << "Size:" << size;
         }
     }
 
     if (channel[z]->current_history < size && size != 1){
-        //qDebug() << "1";
-        //qDebug() << "1a:"<<channel[z]->current_history;
         if (channel[z]->current_history != size ){
-             //qDebug() << "a";
             if ((channel[z]->current_history + 1) == size ){
                 return;
-                 //qDebug() << "b";
             }
-            //qDebug() << "c";
             channel[z]->current_history++;
-            //qDebug() << "c2:"<<channel[z]->current_history;
-            //printf("Curr History #2 %d\n",channel[z]->current_history );
             fflush(stdout);
         }
-        //qDebug() << "d";
         ui->chat_input->clear();
         ui->chat_input->setFocus();
         ui->chat_input->insert((QString)channel[z]->history_list->at(channel[z]->current_history));
-
         ui->chat_input->selectAll();
-        ui->chat_input->home(true);
+        ui->chat_input->end(true);
+        upDown = true;
     }
 
     else if(channel[z]->history_list->size() == 1 && channel[z]->current_history == 0){
@@ -146,9 +132,9 @@ void MainWindow::moveDown(){
         ui->chat_input->clear();
         ui->chat_input->setFocus();
         ui->chat_input->insert((QString)channel[z]->history_list->at(channel[z]->current_history));
-
         ui->chat_input->selectAll();
-        ui->chat_input->home(true);
+        ui->chat_input->end(true);
+        upDown = true;
     }
 }
 
@@ -160,23 +146,20 @@ void MainWindow::moveUp(){
             z = x;
         }
     }
-    qDebug() << "Up Current History:" << channel[z]->current_history;
     fflush(stdout);
-
     if ( z == 0 && channel[z]->history_list == NULL){
-        qDebug() << " Error";
         return;
     }
     if (channel[z]->current_history > 0){
         if (channel[z]->current_history !=0){
-        channel[z]->current_history--;
+            channel[z]->current_history--;
         }
         ui->chat_input->clear();
         ui->chat_input->setFocus();
         ui->chat_input->insert((QString)channel[z]->history_list->at(channel[z]->current_history));
-
         ui->chat_input->selectAll();
-        ui->chat_input->home(true);
+        ui->chat_input->end(true);
+        upDown = true;
     }
 }
 
@@ -192,11 +175,6 @@ void MainWindow::updateCompleter(){
             tab_index = channel[x]->qt_tab_id;
         }
     }
-    //debug purposes
-    //qDebug() << *channel[tab_index-1]->completer_list;
-    //printf("Tab index: %i\n",tab_index);
-    //fflush(stdout);
-
     //updates the completer list every sec
     QCompleter *completer = new QCompleter(*channel[tab_index-1]->completer_list, this);
     completer->setCaseSensitivity(Qt::CaseInsensitive);
@@ -205,7 +183,6 @@ void MainWindow::updateCompleter(){
 
     /*
     QStringList test;
-
     for(int i = 0; i < ((channel[tab_index-1]->channel_data->user_lists->count()) ); i++){
         test << (channel[tab_index-1]->channel_data->user_lists->item(i)->text() );
 
@@ -217,7 +194,6 @@ void MainWindow::updateCompleter(){
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
 {
   if (obj == ui->chat_input) {
-
      if (event->type() == QEvent::KeyPress) {
          QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Tab)
@@ -249,21 +225,28 @@ bool MainWindow::eventFilter(QObject *obj, QEvent *event)
             return true;
         }
      }
-
   }
      // pass the event on to the parent class
      return QMainWindow::eventFilter(obj, event);
 }
 
 void MainWindow::fillIn(){
-    ui->chat_input->end(true);
-    ui->chat_input->insert(" ");
-    ui->chat_input->end(false);
+    if (upDown == false){
+        ui->chat_input->end(true);
+        ui->chat_input->insert(" ");
+        ui->chat_input->end(false);
+    }
 }
 
 void MainWindow::skipHigh(){
-    ui->chat_input->del();
-    enter_chat();
+    if (upDown == false){
+        ui->chat_input->del();
+        enter_chat();
+    }
+    else{
+        enter_chat();
+        upDown = false;
+    }
 }
 //Unused for now
 //void MainWindow::color_text(char string,Channel &browser, int tab_index){
@@ -306,7 +289,6 @@ void MainWindow::mute_sounds(){
          printf("Checked\n");
     //else
         printf("Unchecked\n");
-
 }
 
 void MainWindow::itemDoubleClicked(QListWidgetItem *item){
@@ -334,17 +316,16 @@ void MainWindow::itemDoubleClicked(QListWidgetItem *item){
     memcpy(&data[1+sizeof(header)], msg, header.msg_length);
     socket.write((char*)data, 1+sizeof(header)+header.msg_length);
 
-
     printf ("Item double clicked %s\n",str);fflush(stdout);
 }
 
 Widget_Pointers *MainWindow::createTab(QWidget *tab_x){
     //QWidget *tab_x = new QWidget();
-    QHBoxLayout *horizontalLayout_x = new QHBoxLayout; // MainLayout
-    QHBoxLayout *horizontalLayout_y = new QHBoxLayout; // Ranks/Games Layout
-    QVBoxLayout *verticalLayout_x = new QVBoxLayout; // Games+Ranks Layout
-    QVBoxLayout *verticalLayout_y = new QVBoxLayout; // Browser Layout
-    QVBoxLayout *verticalLayout_z = new QVBoxLayout; // UserList Layout
+    QHBoxLayout *horizontalLayout_x; // MainLayout
+    QHBoxLayout *horizontalLayout_y; // Ranks/Games Layout
+    QVBoxLayout *verticalLayout_x; // Games+Ranks Layout
+    QVBoxLayout *verticalLayout_y; // Browser Layout
+    QVBoxLayout *verticalLayout_z; // UserList Layout
 
     QTextBrowser *textBrowser_x;// = new QTextBrowser;
     QListWidget *listWidget_x;// = new QListWidget; //games
@@ -372,7 +353,6 @@ Widget_Pointers *MainWindow::createTab(QWidget *tab_x){
     horizontalLayout_y = new QHBoxLayout();
     horizontalLayout_y->setSpacing(6);
     horizontalLayout_y->setObjectName(QStringLiteral("horizontalLayout_y"));
-
 
     verticalLayout_x = new QVBoxLayout();
     verticalLayout_x ->setSpacing(6);
@@ -442,31 +422,27 @@ Widget_Pointers *MainWindow::createTab(QWidget *tab_x){
     //double click games_list
     connect(listWidget_x, SIGNAL(itemDoubleClicked(QListWidgetItem*)), this, SLOT(itemDoubleClicked(QListWidgetItem*)));
 
-    // can click on user list
+    //can click on user list
     //user_list_x->setContextMenuPolicy(Qt::CustomContextMenu);
-   // connect(user_list_x, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showContextMenu(QPoint)));
+    //connect(user_list_x, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(showContextMenu(QPoint)));
 
     //listWidget_x->addItem("Game1");
     //listWidget_y->addItem("Rank2");
     //listWidget_z->addItem("Test3");
     //user_list_x->sortItems(Qt::DescendingOrder);
     //container[channel[x]->qt_tab_id-1].user_lists->sortItems(Qt::AscendinOrder);
-/*
-    Widget_Pointers *ptr = (Widget_Pointers*)malloc(sizeof(Widget_Pointers)*tab_index);
-    //memcpy(ptr, container, sizeof(Widget_Pointers)*(tab_index-1));
-    //free(container);
-   //container = ptr;
-    container[tab_index-1].browsers = textBrowser_x;
-    container[tab_index-1].user_lists = user_list_x;
-    container[tab_index-1].rank_lists = listWidget_y;
-    container[tab_index-1].games_lists = listWidget_x;
 
-    */
     Widget_Pointers *ptr = (Widget_Pointers*)malloc(sizeof(Widget_Pointers));
     ptr->browsers = textBrowser_x;
     ptr->user_lists = user_list_x;
     ptr->rank_lists = listWidget_y;
     ptr->games_lists = listWidget_x;
+
+    ptr->hLayoutX = horizontalLayout_x;
+    ptr->hLayoutY = horizontalLayout_y;
+    ptr->vLayoutX = verticalLayout_x;
+    ptr->vLayoutY = verticalLayout_y;
+    ptr->vLayoutZ = verticalLayout_z;
 
     return ptr;
 }
@@ -509,10 +485,8 @@ void MainWindow::compareItem() {
 }*/
 
 void MainWindow::enter_chat() {
-
     QString message = ui->chat_input->text().trimmed();
     std::string msg = message.toStdString();
-
     //Get current tab to get chan_id to pass message to proper text browser
     int tab_index = ui->tabs->currentIndex();
 
@@ -524,50 +498,37 @@ void MainWindow::enter_chat() {
         if (channel[x]->qt_tab_id == tab_index){
             header.channel = channel[x]->channel_id;
             z = x;
-            x = n_channels; 
+            x = n_channels;
         }
     }
-
-//    printf("%i\n",z);
-//    fflush(stdout);
 
     if (message == ""){
         return;
     }
-
-    //fix this section
+    //Saves entered input for up/down history
     if ( z != -1){
-        qDebug()<<"Start Z:" << z;
-        if (channel[z]->history_list){
-            printf("HList count:%d\n",channel[z]->history_list->count());
+        if (!channel[z]->history_list){
+            qDebug() << "History List Error, Should Never Happen";
+            return;
         }
         fflush(stdout);
         if (tab_index != 0){
             if (channel[z]->history_list->size() == 10){
-                printf("Size == 10 \n");
                 fflush(stdout);
-                qDebug()<< "List1: " << *channel[z]->history_list;
                 for(int i = 0 ; i < 9; i++){
                     channel[z]->history_list->swap(i,i+1);
                 }
                 channel[z]->history_list->removeAt(9);
                 channel[z]->history_list->insert(9,message);
                 channel[z]->current_history = 10;
-                qDebug()<< "CList1: " << channel[z]->current_history;
-                qDebug()<< "List2: " << *channel[z]->history_list;
-
              }
             else{
-                //printf("Size < 10 \n");
                 fflush(stdout);
                 channel[z]->current_history = channel[z]->history_list->size()+1;
                 *channel[z]->history_list << (QString) message;
             }
-            qDebug()<<"End";
         }
     }
-    //end up/down history section
-
     //if message received = clear, clear chat of current browser
     if (msg == ".clear" || msg == "/clear" || msg =="-clear"){
         if (tab_index == 0){
@@ -578,17 +539,13 @@ void MainWindow::enter_chat() {
         }
         for (uint y = 0; y < n_channels; ++y) {
             if (channel[y] && channel[y]->qt_tab_id == tab_index) {
-                printf("%i Clear this tab \n",y);
                 fflush(stdout);
                 channel[y]->channel_data->browsers->clear();
                 ui->chat_input->clear();
                 ui->chat_input->setFocus();
                 return;
             }
-
         }
-
-
     }
 
     unsigned char data[1000];
@@ -603,15 +560,9 @@ void MainWindow::enter_chat() {
     memcpy(&data[1+sizeof(header)], msg.c_str(), len);
     socket.write((char*)data, 1 + sizeof(header) + header.msg_length);
 
-    /* test case only, sending to server instead
-    if (!message.isEmpty())
-    ui->status_browser->append(message);
-    */
-
     ui->chat_input->clear();
     // Put the focus back into the input box so they can type again:
     ui->chat_input->setFocus();
-
 }
 
 void MainWindow::setupTabs() {
@@ -623,7 +574,7 @@ void MainWindow::setupTabs() {
             foo = "Tab " + tmp;
             QWidget * w = new QWidget;
             temp = ui->tabs->addTab(w, foo);
-
+            delete w;
             //printf("%d \n",temp);
             ui->tabs->setTabText(temp, foo );
             ui->tabs->setCurrentIndex(temp);
@@ -641,9 +592,7 @@ void MainWindow::closeTab_(int index) {
     if (index == 0){
         return;
     }
-
     //send packet to say i am leaving chat tab
-
     for (uint x = 0; x < n_channels ; x++){
         if (channel[x]->qt_tab_id == index){
             std::string msg = "/leave";
@@ -767,7 +716,6 @@ void MainWindow::update(){
                                 fprintf(f,"%s\n%s",update.username,update.token);
                                 fclose(f);
                             }
-
 
                             remaining_length -= 1+sizeof(update);
                             position = &position[1+sizeof(update)];
@@ -939,7 +887,6 @@ void MainWindow::update(){
                                     }
 
                                 }
-
                                 remaining_length -= 1 + sizeof(user_info);
                                 position = &position[1+sizeof(user_info)];
                             } else goto buffer_remaining;
@@ -959,7 +906,6 @@ void MainWindow::update(){
                                                 for (int z = 0; z < channel[x]->n_users; ++z) {
                                                      const char *username = channel[x]->users[z].username;
                                                      channel[x]->channel_data->user_lists->addItem(username);
-
                                                 }
                                                 y = channel[x]->n_users;
                                                 x = n_channels;
@@ -969,7 +915,6 @@ void MainWindow::update(){
                                         x = n_channels;
                                     }
                                 }
-
                                 remaining_length -= 1 + sizeof(user_info);
                                 position = &position[1+sizeof(user_info)];
                             } else goto buffer_remaining;
@@ -1028,8 +973,23 @@ void MainWindow::update(){
                                         delete channel[x]->channel_data->browsers;
                                         delete channel[x]->channel_data->games_lists;
                                         delete channel[x]->channel_data->user_lists;
+                                        delete channel[x]->channel_data->rank_lists;
+                                        /*
+                                        verticalLayout_x->addLayout(horizontalLayout_y); //GamesLayout add rank/games
+                                        verticalLayout_x->addLayout(verticalLayout_y); //GamesLayout add chat
+                                        horizontalLayout_x->addLayout(verticalLayout_x); //Main Add GameChat
+                                        horizontalLayout_x->addLayout(verticalLayout_z); //Main Add UserList
+                                        so delete HX and VY first since child of VX.. then VX can be deleted, then VZ, then HX last
+                                        */
+                                        delete channel[x]->channel_data->hLayoutY;
+                                        delete channel[x]->channel_data->vLayoutY;
+                                        delete channel[x]->channel_data->vLayoutX;
+                                        delete channel[x]->channel_data->vLayoutZ;
+                                        delete channel[x]->channel_data->hLayoutX;
+
                                         delete channel[x]->completer_list;
                                         delete ui->tabs->widget(channel[x]->qt_tab_id);
+
                                         free(channel[x]->users);
                                         free(channel[x]);
                                         // shift tabs over
@@ -1082,7 +1042,7 @@ void MainWindow::chatbutton_clicked()
 }
 
 void MainWindow::update_user_list(){
-    //get user dAta from server
+    //get user data from server
 
     //input user into list
 
