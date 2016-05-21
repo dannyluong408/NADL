@@ -36,7 +36,11 @@ struct Widget_Pointers {
     QListWidget *user_lists;
     QListWidget *rank_lists;
     QListWidget *games_lists;
-
+    QHBoxLayout *hLayoutX;
+    QHBoxLayout *hLayoutY;
+    QVBoxLayout *vLayoutX;
+    QVBoxLayout *vLayoutY;
+    QVBoxLayout *vLayoutZ;
 };
 
 struct Channel {
@@ -54,28 +58,27 @@ struct Channel {
     int current_history;
 };
 
+//What is this class ??? dont think its being used
+//class KeyboardFilter : public QObject
+//{
+//public:
+//  KeyboardFilter( QObject *parent = 0 ) : QObject( parent ) {}
 
+//protected:
+//  bool eventFilter( QObject *dist, QEvent *event )
+//  {
+//    if( event->type() == QEvent::KeyPress )
+//    {
+//      QKeyEvent *keyEvent = static_cast<QKeyEvent*>( event );
+//      printf("Keyevent detected\n");
+//      fflush(stdout);
+//      if( QString("1234567890").indexOf( keyEvent->text() ) != -1 )
+//        return true;
+//    }
 
-class KeyboardFilter : public QObject
-{
-public:
-  KeyboardFilter( QObject *parent = 0 ) : QObject( parent ) {}
-
-protected:
-  bool eventFilter( QObject *dist, QEvent *event )
-  {
-    if( event->type() == QEvent::KeyPress )
-    {
-      QKeyEvent *keyEvent = static_cast<QKeyEvent*>( event );
-      printf("Keyevent detected\n");
-      fflush(stdout);
-      if( QString("1234567890").indexOf( keyEvent->text() ) != -1 )
-        return true;
-    }
-
-    return false;
-  }
-};
+//    return false;
+//  }
+//};
 
 
 
@@ -99,15 +102,15 @@ private slots:
     void setupTabs();
     void closeTab_(int index);
     void enter_chat();
-    Widget_Pointers *testtab(QWidget *tab_x, int tab_index);
+    Widget_Pointers *createTab(QWidget *tab_x);
     void clear_chat();
-    void showContextMenu(const QPoint& pos);
+    //void showContextMenu(const QPoint& pos); //unused for now
     //void eraseItem();
     //void addItem();
     //void compareItem();
     void mute_sounds();
     void itemDoubleClicked(QListWidgetItem*);
-    void color_text(char string,Channel &browser, int tab_index);
+    //void color_text(char string,Channel &browser, int tab_index); //unused for now
     void fillIn();
     void skipHigh();
     void moveUp();
@@ -126,6 +129,7 @@ private:
     Ui::MainWindow *ui;
     QTimer timer;
     int n_tabs;
+    QCompleter *completer;
 
     char buffer[RECV_MAXLEN];
     uint32_t buffer_pos, n_channels;
@@ -142,7 +146,3 @@ private:
 };
 
 #endif // MAINWINDOW_H
-
-
-
-
