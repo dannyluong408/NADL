@@ -946,7 +946,7 @@ void MainWindow::update(){
                                 QString chan_n;
                                 chan_n = QString::fromStdString(new_channel.channel_name);
 
-                                channel[n_channels]->w = new QWidget;
+                                QWidget *w = new QWidget;
                                 const int temp = ui->tabs->addTab(w, chan_n);
                                 channel[n_channels]->channel_data = createTab(w);
                                 n_tabs++;
