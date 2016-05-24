@@ -63,6 +63,7 @@ struct __attribute__ ((__packed__)) game_state {
 	char host_name[64];
 	int start_time;
 	uint8_t n_users;
+	uint8_t n_max;
 };
 
 /* Chat message header. 
@@ -157,6 +158,11 @@ enum channel_flag {
 enum message_flag {
 	MSG_FLAG_IMPORTANT = 1, // switch current tab to this tab
 	MSG_FLAG_PRINTALL = 2, // print to all chat buffers
+};
+
+enum game_ids {
+	GAME_DOTA = 0,
+	GAME_BLC = 1
 };
 
 #endif /* __DATA_TYPES_HPP */

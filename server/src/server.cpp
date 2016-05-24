@@ -6,6 +6,12 @@ Server::Server() {
 	session = NULL;
 	sql_connection = mysqlpp::Connection(mysqlpp::use_exceptions);
 	
+	// should probably load these from a file. or not who cares anyway.
+	sql_user = "nel";
+	sql_pass = "7f99bef877271bf7dd4aee74c0629e32";
+	sql_db = "nel";
+	sql_host = "localhost";
+	
 	n_connections = 0;
 	socket4 = 0;
 	
@@ -35,6 +41,7 @@ void Server::update_game(const uint16_t league_id, const uint16_t game_id) {
 	Channel *chan = find_channel(league_id);
 	if (chan) {
 		new_state.n_users = chan->game[game_id].n_signed;
+		new_state.n_max = (chan->game_id == GAME_DOTA) ? 10 : 6;
 		new_state.start_time = chan->game[game_id].start_time;
 		strcpy(new_state.game_name, chan->game[game_id].game_name);
 		
@@ -47,7 +54,7 @@ void Server::update_game(const uint16_t league_id, const uint16_t game_id) {
 		unsigned char msg[1000];
 		msg[0] = SERVER_MESSAGE_CHANNEL_UPDATE_GAMEINFO;
 		memcpy(&msg[1], &new_state, sizeof(new_state));
-		for (uint32_t x = 0; x < chan->n_members; ++x) {
+		for (int x = 0; x < chan->n_members; ++x) {
 			chan->members[x].ptr->send_raw(msg, 1+sizeof(new_state));
 		}
 	}
@@ -57,11 +64,11 @@ void Server::disconnect_session(const uint32_t session_id, const uint8_t msg) {
 	if (session[session_id]) {
 		printf("Disconnecting session %i (%s) reason: %i\n",session_id,session[session_id]->get_name(),msg);
 		
-		uint16_t n_channels;
-		uint16_t *joined_channels = session[session_id]->get_channels(&n_channels);
-		for (uint32_t x = 0; x < n_channels; ++x) {
+		uint16_t user_n_channels;
+		uint16_t *joined_channels = session[session_id]->get_channels(&user_n_channels);
+		for (int x = 0; x < user_n_channels; ++x) {
 			Channel *chan = channels[joined_channels[x]];
-			for (uint32_t y = 0; y < chan->n_games; ++y) {
+			for (int y = 0; y < chan->n_games; ++y) {
 				if (chan->game[y].n_signed && chan->game[y].hoster_id == session[session_id]->get_user_id()) {
 					char disband_msg[1000];
 					snprintf(disband_msg,sizeof(disband_msg),"%s closed (%s disconnected).",chan->game[y].game_name,session[session_id]->get_name());
@@ -69,7 +76,7 @@ void Server::disconnect_session(const uint32_t session_id, const uint8_t msg) {
 					chan->game[y].n_signed = 0; // disband the game officially
 					update_game(joined_channels[x], y);
 				}
-				for (uint32_t z = 0; z < chan->game[y].n_signed; ++z) {
+				for (int z = 0; z < chan->game[y].n_signed; ++z) {
 					if (chan->game[y].signed_members[z] == session[session_id]->get_user_id()) {
 						chan->game[y].signed_members[z] = chan->game[y].signed_members[chan->game[y].n_signed-1];
 						chan->game[y].n_signed--;
@@ -180,20 +187,21 @@ int Server::init(const int argc, char **argv) {
 	mysqlpp::Query query = sql_connection.query();
 	query << "SELECT * FROM leagues";
 	mysqlpp::StoreQueryResult result = query.store();
-	for (uint32_t x = 0; x < result.num_rows(); ++x) {	
+	for (int x = 0; x < result.num_rows(); ++x) {	
 		std::string name = std::string(result[x]["name"]);
 		uint8_t flags = result[x]["settings"];
 		uint32_t owner = result[x]["owner"];
 		uint16_t id = result[x]["league_id"];
+		uint8_t game_id = result[x]["game_id"];
 		uint32_t n_games;
 		mysqlpp::Query game_count = sql_connection.query();
 		game_count << "SELECT * FROM games WHERE league_id = " << id << " ORDER BY game_id DESC LIMIT 1";
 		mysqlpp::StoreQueryResult game_count_res = game_count.store();
 		if (!game_count_res.num_rows()) n_games = 0;
 		else n_games = game_count_res[0]["game_id"];
-		add_channel(name.c_str(), flags, id, owner, n_games);
+		add_channel(name.c_str(), flags, id, owner, n_games, game_id);
 	}
-	printf("Loaded %u channels.\n",(uint32_t)result.num_rows());
+	printf("Loaded %i channels.\n",result.num_rows());
 	
 	puts("NEL server started.");
 	return 0;
@@ -203,7 +211,7 @@ void Server::run() {
 	const uint64_t initial_timestamp = nx_get_highres_time_us();
 	while (!quit) {
 		int timestep = 50; // in ms
-		uint64_t next_update = 0;
+		uint64_t next_update = server_time + minutes(1);
 		int conn;
 		do {
 			conn = accept(socket4, (struct sockaddr*)NULL, NULL);
@@ -213,6 +221,7 @@ void Server::run() {
 				if (!ptr || !new_session) {
 					// can't accept connection. 
 					unsigned char msg = SERVER_MESSAGE_DISCONNECT;
+					puts("Can't accept new session");
 					send(conn, (void*)&msg, sizeof(msg), 0);
 					free(ptr);
 					free(new_session);
@@ -238,7 +247,7 @@ void Server::run() {
 			}
 		} while (conn > 0);
 		unsigned char buffer[RECV_MAXLEN];
-		for (uint32_t x = 0; x < n_connections; ++x) {
+		for (int x = 0; x < n_connections; ++x) {
 			const int len = recv(session[x]->get_sockfd(), (void*)buffer, sizeof(buffer), MSG_DONTWAIT);
 			if (len > 0) {
 				command(x, buffer, len);
@@ -253,9 +262,9 @@ void Server::run() {
 			}
 		}
 		if (server_time >= next_update) {
-			next_update = server_time + minutes(1);
-			for (uint32_t x = 0; x < n_channels; ++x) {
-				for (uint32_t y = 0; y < channel_data[x]->n_games; ++y) {
+			next_update += minutes(1);
+			for (int x = 0; x < n_channels; ++x) {
+				for (int y = 0; y < channel_data[x]->n_games; ++y) {
 					if (channel_data[x]->game[y].start_time) {
 						channel_data[x]->game[y].start_time += minutes(1);
 						update_game(channel_data[x]->channel_id, y);
@@ -306,7 +315,7 @@ void Server::auth_user(const int session_id, user_login_msg auth_info) {
 			} else {
 				uint64_t salt = result[0]["salt"];
 				uint8_t hash_output[32];
-				libscrypt_scrypt((uint8_t*)auth_info.auth, sizeof(auth_info.auth), (uint8_t*)&salt, sizeof(salt), 16 * 1024, 8, 1, hash_output, sizeof(hash_output));
+				const int r = libscrypt_scrypt((uint8_t*)auth_info.auth, sizeof(auth_info.auth), (uint8_t*)&salt, sizeof(salt), 16 * 1024, 8, 1, hash_output, sizeof(hash_output));
 				const unsigned char *hash_sql = reinterpret_cast<const unsigned char*>(result[0]["password_hash"].data());
 				
 				char sql_hash_as_hex[65], input_password_hash_as_hex[65];
@@ -336,7 +345,7 @@ void Server::auth_user(const int session_id, user_login_msg auth_info) {
 				printf("User %s/%u successful login.\n",username.c_str(),info.user_id);
 
 				// disconnect and old sessions using this user
-				for (uint32_t x = 0; x < n_connections; ++x) {
+				for (int x = 0; x < n_connections; ++x) {
 					if (session[x]->get_user_id() == info.user_id) {
 						/*
 						uint16_t n_channels;
@@ -358,11 +367,11 @@ void Server::auth_user(const int session_id, user_login_msg auth_info) {
 				snprintf(login_msg,sizeof(login_msg),"Successfully logged in as %s.", session[session_id]->get_name());
 				session[session_id]->server_msg(login_msg, strlen(login_msg)+1);
 				
-				for (uint32_t x = 0; x < n_channels; ++x) {
-					const uint32_t n_games = channel_data[x]->n_games;
-					for (uint32_t y = 0; y < n_games; ++y) {
-						const uint32_t n_signed = channel_data[x]->game[y].n_signed;
-						for (uint32_t z = 0; z < n_signed; ++z) {
+				for (int x = 0; x < n_channels; ++x) {
+					const int n_games = channel_data[x]->n_games;
+					for (int y = 0; y < n_games; ++y) {
+						const int n_signed = channel_data[x]->game[y].n_signed;
+						for (int z = 0; z < n_signed; ++z) {
 							if (channel_data[x]->game[y].signed_members[z] == info.user_id) {
 								session[session_id]->sign();
 								z = n_signed;
@@ -377,7 +386,7 @@ void Server::auth_user(const int session_id, user_login_msg auth_info) {
 				channel_query << "SELECT * FROM league_members WHERE user_id=" << session[session_id]->get_user_id() << " ORDER BY league_id ASC";
 				try {
 					mysqlpp::StoreQueryResult channel_result = channel_query.store();
-					for (uint32_t x = 0; x < channel_result.num_rows(); ++x) {
+					for (int x = 0; x < channel_result.num_rows(); ++x) {
 						const uint8_t permission = channel_result[x]["permissions"];
 						const uint16_t warn_level = channel_result[x]["warn"];
 						const uint16_t rating = channel_result[x]["rating"];
@@ -421,14 +430,14 @@ void Server::auth_user(const int session_id, user_login_msg auth_info) {
 
 void Server::interpret_message(const int session_id, const chat_message_header header, char *message) {
 	//printf("Interpreting message %i bytes long: \n%s\n",strlen(message),message);fflush(stdout);
-	uint32_t len = strlen(message);
+	int len = strlen(message);
 	if (len == 0) return;
 	// sanitize the string
 	char previous_char = 0;
-	for (uint32_t x = 0; x < len; ++x) {
+	for (int x = 0; x < len; ++x) {
 		if (message[x] < 32 || (message[x] == ' ' && previous_char == ' ')) {
 			// shift the entire array over by one. @len does not include the null-terminator.
-			for (uint32_t y = x; y < len; ++y) {
+			for (int y = x; y < len; ++y) {
 				message[y] = message[y+1];
 			}
 			len--;
@@ -439,8 +448,8 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 	// this is a command.
 	if (len > 2 && ((message[0] == '.' && message[1] != '.') || message[0] == '/' || message[0] == '-' || message[0] == '!')) {
 		message[0] = '/';
-		uint32_t count = 1;
-		for (uint32_t x = 0; x < len; ++x) {
+		int count = 1;
+		for (int x = 0; x < len; ++x) {
 			if (message[x] == ' ') count++;
 		}
 		char *data = (char*)malloc(len+1);
@@ -449,7 +458,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 		
 		int last = 0;
 		count = 0;
-		for (uint32_t x = 0; x < len; ++x) {
+		for (int x = 0; x < len; ++x) {
 			if (data[x] == ' ') {
 				data[x] = '\0';
 				arg[count] = &data[last];
@@ -583,9 +592,9 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 			if (session[session_id]->get_permissions() >= PERMISSION_ADMINISTRATOR) {
 				if (count == 2) {
 					// check for proper name
-					uint32_t name_len = strlen(arg[1]);
+					int name_len = strlen(arg[1]);
 					bool valid_name = true;
-					for (uint32_t x = 0; x < name_len; ++x) {
+					for (int x = 0; x < name_len; ++x) {
 						// there's actually 100% a better way to do this probably.
 						if (arg[1][x] == '?' || arg[1][x] == '.' || arg[1][x] == '!' || arg[1][x] == ',' 
 							|| arg[1][x] == '[' || arg[1][x] == ']' || arg[1][x] == '(' || arg[1][x] == ')' 
@@ -683,7 +692,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 					if (len < 64 && len > 0) {
 						char lowerarg[64];
 						lower(arg[1], lowerarg);
-						for (uint32_t x = 0; x < n_connections; ++x) {
+						for (int x = 0; x < n_connections; ++x) {
 							if (session[x]) {
 								char lowername[64]; 
 								lower(session[x]->get_name(), lowername);
@@ -723,96 +732,118 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 			if (success && permission >= CHANNEL_PLAYER_PERMISSIONS) {
 				Channel *chan = find_channel(header.channel);
 				if (chan) {
-					for (uint32_t x = 0; x < chan->n_games; ++x) {
-						const uint32_t n_signed = chan->game[x].n_signed;
-						for (uint32_t y = 0; y < n_signed; ++y) {
+					for (int x = 0; x < chan->n_games; ++x) {
+						const int n_signed = chan->game[x].n_signed;
+						for (int y = 0; y < n_signed; ++y) {
 							if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
+								const uint32_t n_players = (chan->game_id == GAME_DOTA) ? 10 : 6;
 								if (chan->game[x].hoster_id == session[session_id]->get_user_id()) {
-									if (chan->game[x].n_signed == 10) {
+									if (chan->game[x].n_signed == n_players) {
 										// start the game
 										chan->game[x].start_time = 1;
 										// convert session ids to channel member ids
-										Member *member_arr[20];
+										Member **member_arr = (Member**)malloc(sizeof(Member*)*(n_players*2));
 										int success = 1;
-										for (uint32_t z = 0; z < 10; ++z) {
+										for (int z = 0; z < n_players; ++z) {
 											member_arr[z] = find_member(chan->game[x].signed_members[z], header.channel);
+											// need 2 copies
+											member_arr[z+n_players] = member_arr[z];
 											if (!member_arr[z]) success = false;
 										}
 										if (success) {
 											update_game(header.channel, x);
-											memmove(&member_arr[10], member_arr, sizeof(Member)*10);
 											int best_diff = 100000;
 											int best_pos = 0;
 											int ratings[2];
 											// here we go
-											for (uint32_t z = 0; z < 10; ++z) {
+											for (uint8_t z = 0; z < n_players; ++z) {
 												int team_radiant = 0, team_dire = 0;
-												for (int i = 0; i < 5; ++i) {
+												for (uint8_t i = 0; i < n_players/2; ++i) {
 													team_radiant += member_arr[z+i]->rating;
-													team_dire += member_arr[z+i+5]->rating;
+													team_dire += member_arr[z+(n_players/2)+i]->rating;
 												}
 												const int diff = abs(team_radiant - team_dire);
 												if (diff < best_diff) {
 													best_diff = diff;
 													best_pos = z;
+													ratings[0] = team_radiant;
+													ratings[1] = team_dire;
 												}
-												chan->game[x].results[x] = 0;
-												chan->game[x].truant[x] = 0;
-												
+												chan->game[x].results[z] = 0;
+												chan->game[x].truant[z] = 0;
 											}
-											int radiant_captain = 0, dire_captain = 5;
+											int radiant_captain, dire_captain;
 											int radiant_rating = 0, dire_rating = 0;
-											for (int i = 0; i < 5; ++i) {
+											for (int i = 0; i < n_players/2; ++i) {
 												if (member_arr[best_pos+i]->rating > radiant_rating) {
 													radiant_rating = member_arr[best_pos+i]->rating;
 													radiant_captain = i;
 												}
-												if (member_arr[best_pos+i+5]->rating > dire_rating) {
+												if (member_arr[best_pos+i+(n_players/2)]->rating > dire_rating) {
 													dire_rating = member_arr[best_pos+i+5]->rating;
-													dire_captain = i+5;
+													dire_captain = i+(n_players/2);
 												}
 											}
 											Member *temp = member_arr[best_pos];
 											member_arr[best_pos] = member_arr[best_pos+radiant_captain];
 											member_arr[best_pos+radiant_captain] = temp;
 											
-											temp = member_arr[best_pos+5];
-											member_arr[best_pos+5] = member_arr[best_pos+dire_captain];
+											temp = member_arr[best_pos+(n_players/2)];
+											member_arr[best_pos+(n_players/2)] = member_arr[best_pos+dire_captain];
 											member_arr[best_pos+dire_captain] = temp;
 											
 											chan->game[x].rating_change = (ratings[0] - ratings[1]) / 50;
 											
-											for (uint32_t y = 0; y < 10; ++y) { 
+											for (int y = 0; y < n_players; ++y) { 
 												chan->game[x].results[y] = 0;
 												chan->game[x].truant[y] = 0;
 											}
 											
-											char msg[2000];
-											snprintf(msg, sizeof(msg), "%s started.", chan->game[x].game_name);
-											msg_channel(msg, strlen(msg)+1, 0, header.channel);
-											snprintf(msg, sizeof(msg), "Radiant: %s (c), %s, %s, %s, %s (%i) - Dire: %s (c), %s, %s, %s, %s (%i)",
-												member_arr[best_pos]->ptr->get_name(), member_arr[best_pos+1]->ptr->get_name(), member_arr[best_pos+2]->ptr->get_name(), member_arr[best_pos+3]->ptr->get_name(), member_arr[best_pos+4]->ptr->get_name(), radiant_rating,
-												member_arr[best_pos+5]->ptr->get_name(), member_arr[best_pos+6]->ptr->get_name(), member_arr[best_pos+7]->ptr->get_name(), member_arr[best_pos+8]->ptr->get_name(), member_arr[best_pos+9]->ptr->get_name(), dire_rating);
-											msg_channel(msg, strlen(msg)+1, 0, header.channel);
+											char msg[1000];
+											if (chan->game_id == GAME_DOTA) {
+												snprintf(msg, sizeof(msg), "%s started.", chan->game[x].game_name);
+												msg_channel_as_admin(msg, strlen(msg)+1, 0, header.channel);
+												snprintf(msg, sizeof(msg), "Radiant: %s (c), %s, %s, %s, %s (%i) - Dire: %s (c), %s, %s, %s, %s (%i)",
+													member_arr[best_pos]->ptr->get_name(), member_arr[best_pos+1]->ptr->get_name(), member_arr[best_pos+2]->ptr->get_name(), member_arr[best_pos+3]->ptr->get_name(), member_arr[best_pos+4]->ptr->get_name(), ratings[0],
+													member_arr[best_pos+5]->ptr->get_name(), member_arr[best_pos+6]->ptr->get_name(), member_arr[best_pos+7]->ptr->get_name(), member_arr[best_pos+8]->ptr->get_name(), member_arr[best_pos+9]->ptr->get_name(), ratings[1]);
+												msg_channel_as_admin(msg, strlen(msg)+1, 0, header.channel);
+												
+												chan->game[x].teams_str = (char*)malloc(strlen(msg)+1);
+												memcpy(chan->game[x].teams_str, msg, strlen(msg)+1);
+												
+												uint16_t random;
+												get_random(&random, sizeof(random));
+												// 100 - 999 - always 3 chars long
+												snprintf(msg, sizeof(msg), "Password is \"nadl%i\" (all lowercase)",random%900 + 100);
+												msg_channel(msg, strlen(msg)+1, 0, header.channel);
+												found = -2;
+											} else if (chan->game_id == GAME_BLC) {
+												snprintf(msg, sizeof(msg), "%s started.", chan->game[x].game_name);
+												msg_channel_as_admin(msg, strlen(msg)+1, 0, header.channel);
+												snprintf(msg, sizeof(msg), "Warm: %s*, %s, %s, (%i) - Cold: %s*, %s, %s (%i)",
+													member_arr[best_pos]->ptr->get_name(), member_arr[best_pos+1]->ptr->get_name(), member_arr[best_pos+2]->ptr->get_name(), ratings[0],
+													member_arr[best_pos+3]->ptr->get_name(), member_arr[best_pos+4]->ptr->get_name(), member_arr[best_pos+5]->ptr->get_name(), ratings[1]);
+												msg_channel_as_admin(msg, strlen(msg)+1, 0, header.channel);
+												chan->game[x].teams_str = (char*)malloc(strlen(msg)+1);
+												memcpy(chan->game[x].teams_str, msg, strlen(msg)+1);
+												
+												found = -2;
+											}
 											
-											chan->game[x].teams_str = (char*)malloc(strlen(msg)+1);
-											memcpy(chan->game[x].teams_str, msg, strlen(msg)+1);
-											
-											uint16_t random;
-											get_random(&random, sizeof(random));
-											snprintf(msg, sizeof(msg), "Password is \"nadl%i\" (all lowercase)",random%900);
-											msg_channel(msg, strlen(msg)+1, 0, header.channel);
-											found = -2;
+											free(member_arr);
 										} else {
-											char errmsg[1000];
+											char errmsg[200];
 											snprintf(errmsg, sizeof(errmsg), "startgame error on game %s. - closing game.", chan->game[x].game_name);
-											msg_channel(errmsg, strlen(errmsg)+1, 0, header.channel);
+											msg_channel_as_admin(errmsg, strlen(errmsg)+1, 0, header.channel);
 											chan->game[x].n_signed = 0;
 											update_game(header.channel, x);
 										}
 									} else {
-										const char *errmsg = "Can't start game until 10 members have signed.";
-										session[session_id]->msg(errmsg, strlen(errmsg)+1, 0, header.channel);
+										
+										char errmsg[200];
+										snprintf(errmsg, sizeof(errmsg), "Can't start game until %i members have signed.", n_players);
+										session[session_id]->server_msg(errmsg, strlen(errmsg)+1);
+										found = -2;
 									}
 								}
 								y = n_signed;
@@ -823,7 +854,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 					if (found == -1 && !session[session_id]->sign_state()) {
 						// make new game
 						// search for an empty game
-						for (uint32_t x = 0; x < chan->n_games; ++x) {
+						for (int x = 0; x < chan->n_games; ++x) {
 							if (chan->game[x].n_signed == 0) {
 								found = x;
 								x = chan->n_games;
@@ -838,7 +869,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 							found = chan->n_games;
 							chan->n_games++;
 						}
-						for (uint32_t x = 0; x < 10; ++x) {
+						for (int x = 0; x < 10; ++x) {
 							chan->game[found].signed_members[x] = 0;
 							chan->game[found].results[x] = 0;
 							chan->game[found].truant[x] = 0;
@@ -864,7 +895,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 						session[session_id]->sign();
 						char start_msg[1000];
 						snprintf(start_msg, sizeof(start_msg), "%s has started a new game. \"/sign %s\" to join.", session[session_id]->get_name(), chan->game[found].game_name);
-						msg_channel(start_msg, strlen(start_msg)+1, 0, header.channel);
+						msg_channel_as_admin(start_msg, strlen(start_msg)+1, 0, header.channel);
 						puts("New game started");
 					} else if (found != -2) {
 						const char *errmsg = "sg: You're already signed to a game!";
@@ -959,13 +990,13 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 							int wins1 = 0, wins2 = 0, games1 = 0, games2 = 0;
 							int wins_together = 0, games_together = 0;
 							int wins_against = 0, games_against = 0;
-							for (uint32_t x = 0; x < game_result.num_rows(); ++x) {
+							for (int x = 0; x < game_result.num_rows(); ++x) {
 								const uint32_t selected_id = game_result[x]["user_id"];
 								if (selected_id == id1) {
-									const uint32_t game_id = game_result[x]["game_id"];
+									const int game_id = game_result[x]["game_id"];
 									games1++;
 									if (game_result[x]["result"] == game_result[x]["team"]) wins1++;
-									for (uint32_t y = 0; y < game_result.num_rows(); ++y) {
+									for (int y = 0; y < game_result.num_rows(); ++y) {
 										const uint32_t current_game_id = game_result[y]["game_id"];
 										const uint32_t current_user_id = game_result[y]["user_id"];
 										if (current_game_id == game_id && current_user_id == id2) {
@@ -985,7 +1016,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 								}
 							}
 							// 2nd pass - count other player total wins/losses
-							for (uint32_t x = 0; x < game_result.num_rows(); ++x) {
+							for (int x = 0; x < game_result.num_rows(); ++x) {
 								const uint32_t current_user_id = game_result[x]["user_id"];
 								if (current_user_id == id2) {
 									games2++;
@@ -1042,9 +1073,9 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 					const uint32_t user_id = session[session_id]->get_user_id();
 					if (chan) {
 						int found = -1;
-						for (uint32_t x = 0; x < chan->n_games; ++x) {
-							const uint32_t n_signed = chan->game[x].n_signed;
-							for (uint32_t y = 0; y < n_signed; ++y) {
+						for (int x = 0; x < chan->n_games; ++x) {
+							const int n_signed = chan->game[x].n_signed;
+							for (int y = 0; y < n_signed; ++y) {
 								if (chan->game[x].signed_members[y] == user_id) {
 									found = x;
 									y = n_signed;
@@ -1079,9 +1110,9 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 												char msg[1000];
 												snprintf(msg, sizeof(msg), "%s has forbidden %s from the channel.",session[session_id]->get_name(),std::string(result[0]["username"]).c_str());
 												msg_channel(msg, strlen(msg)+1, 0, header.channel);
-												for (uint32_t x = 0; x < chan->game[found].n_signed; ++x) {
+												for (int x = 0; x < chan->game[found].n_signed; ++x) {
 													if (chan->game[found].signed_members[x] == found_user) {
-														for (uint32_t y = 0; y < n_connections; ++y) {
+														for (int y = 0; y < n_connections; ++y) {
 															if (session[y]->get_user_id() == found_user) {
 																out_game(y, header.channel, false);
 															}
@@ -1131,7 +1162,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 						int game_id = -1;
 						char formatted_str[1000];
 						// this is actually the dumbest shit
-						snprintf(formatted_str, sizeof(formatted_str), "%%*%uc-%%u", (uint32_t)strlen(chan->name));
+						snprintf(formatted_str, sizeof(formatted_str), "%%*%uc-%%u", strlen(chan->name));
 						if (count >= 2) {
 							int buffer;
 							if (sscanf(arg[1], formatted_str, &buffer) == 1) {
@@ -1141,7 +1172,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 							}
 						} else {
 							int available_game_count = 0;
-							for (uint32_t x = 0; x < chan->n_games; ++x) {
+							for (int x = 0; x < chan->n_games; ++x) {
 								const int n = chan->game[x].n_signed;
 								if (n > 0 && n < 10) {	
 									available_game_count++;
@@ -1156,8 +1187,8 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 						}
 						if (game_id != -1) {
 							// find this game now
-							for (uint32_t x = 0; x < chan->n_games; ++x) {
-								if (chan->game[x].game_id == (uint32_t)game_id) {
+							for (int x = 0; x < chan->n_games; ++x) {
+								if (chan->game[x].game_id == game_id) {
 									const int n_signed = chan->game[x].n_signed;
 									if (n_signed < 10 && n_signed > 0) {
 										int forbid = false;
@@ -1170,12 +1201,12 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 										if (!forbid) {
 											chan->game[x].signed_members[chan->game[x].n_signed] = session[session_id]->get_user_id();
 											chan->game[x].n_signed++;
-											
+											const uint32_t n_players = (chan->game_id == GAME_DOTA) ? 10 : 6;
 											char msg[1000];
-											snprintf(msg, sizeof(msg), "%s signed game %s.",session[session_id]->get_name(), chan->game[x].game_name);
+											snprintf(msg, sizeof(msg), "%s signed game %s (%i/%i).",session[session_id]->get_name(), chan->game[x].game_name, chan->game[x].n_signed, n_players);
 											msg_channel(msg, strlen(msg)+1, 0, header.channel);
 											session[session_id]->sign();
-											if (chan->game[x].n_signed == 10) {
+											if (chan->game[x].n_signed == n_players) {
 												snprintf(msg, sizeof(msg), "%s is full. The host may /sg again to start the game.", chan->game[x].game_name);
 												msg_channel(msg, strlen(msg)+1, 0, header.channel);
 											}
@@ -1204,19 +1235,18 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 				// find game
 				Channel *chan = find_channel(header.channel);
 				if (chan) {
-					for (uint32_t x = 0; x < chan->n_games; ++x) {
-						for (uint32_t y = 0; y < chan->game[x].n_signed; ++y) {
+					for (int x = 0; x < chan->n_games; ++x) {
+						for (int y = 0; y < chan->game[x].n_signed; ++y) {
 							if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
 								char str[2000];
 								snprintf(str, sizeof(str), "%s pool:",chan->game[x].game_name);
 								int pos = strlen(str);
-								const uint8_t n_signed = chan->game[x].n_signed;
-								for (uint32_t z = 0; z < n_signed; ++z) {
+								for (int z = 0; z < chan->game[x].n_signed; ++z) {
+									// running out of iterator names
 									int found = 0;
 									const char *fmt_strings[2] = { " %s (%i),", " %s (%i)" };
-									// check if this is the last entry in our list
-									const uint8_t use = (z + 1 > n_signed) ? 1 : 0;
-									for (uint32_t i = 0; i < chan->n_members; ++i) {
+									const int use = (z < chan->game[x].n_signed-1) ? 0 : 1;
+									for (int i = 0; i < chan->n_members; ++i) {
 										if (chan->members[i].id == chan->game[x].signed_members[z]) {
 											snprintf(&str[pos], sizeof(str)-pos, fmt_strings[use],chan->members[i].ptr->get_name(),chan->members[i].rating);
 											
@@ -1259,10 +1289,12 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 						uint8_t result = 0;
 						if (strcmp(arg_lower,"radiant") == 0 || 
 							strcmp(arg_lower,"good") == 0 || 
+							strcmp(arg_lower,"warm") == 0 ||
 							strcmp(arg_lower,"ct") == 0) {
 								result = 1;
 						} else if (strcmp(arg_lower,"dire") == 0 || 
 							strcmp(arg_lower,"bad") == 0 || 
+							strcmp(arg_lower,"cold") == 0 ||
 							strcmp(arg_lower,"t") == 0) {
 								result = 2;
 						} else if (strcmp(arg_lower,"draw") == 0) {
@@ -1271,27 +1303,33 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 						if (result) {
 							Channel *chan = find_channel(header.channel);
 							if (chan) {
-								for (uint32_t x = 0; x < chan->n_games; ++x) {
-									if (chan->game[x].n_signed == 10 && chan->game[x].start_time) {
-										for (uint32_t y = 0; y < 10; ++y) {
+								for (int x = 0; x < chan->n_games; ++x) {
+									const uint32_t n_players = (chan->game_id == GAME_DOTA) ? 10 : 6;
+									if (chan->game[x].n_signed == n_players && chan->game[x].start_time) {
+										for (int y = 0; y < n_players; ++y) {
 											if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
 												chan->game[x].results[y] = result;
-												const char *result_strings[3] = { "Radiant", "Dire", "Draw" };
+												const char *result_strings_dota[3] = { "Radiant", "Dire", "Draw" };
+												const char *result_strings_blc[3] = { "Warm", "Cold", "Draw" };
 												char msg[1000];
-												snprintf(msg, sizeof(msg), "%s has resulted %s.",session[session_id]->get_name(), result_strings[result-1]);
+												if (chan->game_id == GAME_DOTA) {
+													snprintf(msg, sizeof(msg), "%s has resulted %s.",session[session_id]->get_name(), result_strings_dota[result-1]);
+												} else if (chan->game_id == GAME_BLC) {
+													snprintf(msg, sizeof(msg), "%s has resulted %s.",session[session_id]->get_name(), result_strings_blc[result-1]);
+												}
 												msg_channel(msg, strlen(msg)+1, 0, header.channel);
 												uint8_t result_count[4];
 												result_count[1] = 0;
 												result_count[2] = 0;
 												result_count[3] = 0;
 												
-												for (uint32_t z = 0; z < 10; ++z) {
+												for (int z = 0; z < n_players; ++z) {
 													result_count[chan->game[x].results[z]]++;
 												}
 												uint8_t official_result = 0;
-												if (result_count[1] > 5) official_result = 1;
-												else if (result_count[2] > 5) official_result = 2;
-												else if (result_count[3] > 5) official_result = 3;
+												if (result_count[1] > n_players / 2) official_result = 1;
+												else if (result_count[2] > n_players / 2) official_result = 2;
+												else if (result_count[3] > n_players / 2) official_result = 3;
 												if (official_result) {
 													free(chan->game[x].teams_str);
 													result_game(header.channel, x, official_result);
@@ -1319,8 +1357,8 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 			if (session[session_id]->sign_state()) {
 				Channel *chan = find_channel(header.channel);
 				if (chan) {
-					for (uint32_t x = 0; x < chan->n_games; ++x) {
-						for (uint32_t y = 0; y < chan->game[x].n_signed; ++y) {
+					for (int x = 0; x < chan->n_games; ++x) {
+						for (int y = 0; y < chan->game[x].n_signed; ++y) {
 							if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
 								if (chan->game[x].start_time) {
 									if (chan->game[x].teams_str) session[session_id]->msg(chan->game[x].teams_str, strlen(chan->game[x].teams_str)+1, 0, header.channel);
@@ -1436,10 +1474,10 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 										} else {
 											vouch_message[0] = '\0';
 										}
-										msg_channel(vouch_message, strlen(vouch_message)+1, 0, header.channel);
+										msg_channel_as_admin(vouch_message, strlen(vouch_message)+1, 0, header.channel);
 										if (level == 0) { // remove them if theyre in the channel.
 											if (remove_user_from_channel(user_id, header.channel)) {
-												for (uint32_t x = 0; x < n_connections; ++x) {
+												for (int x = 0; x < n_connections; ++x) {
 													if (session[x]->get_user_id() == user_id) {
 														session[x]->remove_channel(header.channel);
 														x = n_connections;
@@ -1452,7 +1490,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 									// redundant
 									char errmsg[800];
 									snprintf(errmsg, sizeof(errmsg), "vouch: Couldn't find user '%s'",arg[1]);
-									session[session_id]->msg(errmsg, strlen(errmsg)+1, 0, header.channel);
+									session[session_id]->server_msg(errmsg, strlen(errmsg)+1);
 								} 
 							} catch (mysqlpp::BadQuery error) {
 								char buffer[2048];
@@ -1492,8 +1530,8 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 				if (session[session_id]->sign_state()) {
 					Channel *chan = find_channel(header.channel);
 					if (chan) {
-						for (uint32_t x = 0; x < chan->n_games; ++x) {
-							for (uint32_t y = 0; y < chan->game[x].n_signed; ++y) {
+						for (int x = 0; x < chan->n_games; ++x) {
+							for (int y = 0; y < chan->game[x].n_signed; ++y) {
 								if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
 									// game id is x.
 									if (chan->game[x].start_time >= minutes(5)) {
@@ -1505,7 +1543,7 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 												const uint32_t truant_id = result[0]["id"];
 												bool found = false;
 												// find this player in the game
-												for (uint32_t z = 0; z < chan->game[x].n_signed; ++z) {
+												for (int z = 0; z < chan->game[x].n_signed; ++z) {
 													if (chan->game[x].signed_members[z] == truant_id) found = true;
 												}
 												if (found) {
@@ -1520,21 +1558,22 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 														snprintf(msg, sizeof(msg), "%s has truanted %s.", session[session_id]->get_name(), std::string(result[0]["username"]).c_str());
 														msg_channel(msg, strlen(msg)+1, 0, header.channel);
 														int truant_count = 0;
-														for (uint32_t z = 0; z < 10; ++z) {
+														const uint32_t n_players = (chan->game_id == GAME_DOTA) ? 10 : 6;
+														for (int z = 0; z < n_players; ++z) {
 															if (chan->game[x].truant[z] == truant_id) truant_count++;
 														}
-														if (truant_count > 5) {
+														if (truant_count > n_players / 2) {
 															chan->game[x].start_time = 0;
 															chan->game[x].n_signed = 0;
 															char newmsg[1000];
 															snprintf(newmsg, sizeof(newmsg), "%s closed. (%s truanted)",chan->game[x].game_name, std::string(result[0]["username"]).c_str());
-															for (uint32_t z = 0; z < n_connections; ++z) {
+															for (int z = 0; z < n_connections; ++z) {
 																// it seems like this will fail if the hoster isnt active.
 																if (chan->game[x].hoster_id == session[z]->get_user_id()) {
 																	out_game(z, header.channel, false);
 																}
 																// make sure everyones unsigned anyway.
-																for (int i = 0; i < 10; ++i) {
+																for (int i = 0; i < n_players; ++i) {
 																	if (session[z]->get_user_id() == chan->game[x].signed_members[i]) {
 																		session[z]->unsign();
 																		i = 10;
@@ -1587,13 +1626,13 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 		} else if (strcmp("/join",arg[0]) == 0) {
 			if (session[session_id]->get_user_id()) {
 				if (count >= 2) {
-					for (uint32_t x = 1; x < count; ++x) {
+					for (int x = 1; x < count; ++x) {
 						const uint16_t channel_id = search_channel(arg[x]);
 						Channel *chan = find_channel(channel_id);
 						if (channel_id && chan) {
 							int found = 0;
 							// make sure the user isn't already in the channel.
-							for (uint32_t y = 0; y < chan->n_members; ++y) {
+							for (int y = 0; y < chan->n_members; ++y) {
 								if (chan->members[y].id == session[session_id]->get_user_id()) {
 									found = 1;
 									y = chan->n_members;
@@ -1783,9 +1822,16 @@ void Server::interpret_message(const int session_id, const chat_message_header h
 		//fflush(stdout);
 		
 		const uint32_t id = session[session_id]->get_user_id();
-		if (get_user_active_channel_permissions(id, header.channel) >= CHANNEL_CHAT_PERMISSIONS) {
-			char msg[2000];
-			snprintf(msg, sizeof(msg), "%s: %s", session[session_id]->get_name(), sanitized_string.c_str());
+		const uint8_t permissions = get_user_active_channel_permissions(id, header.channel);
+		if (permissions >= CHANNEL_CHAT_PERMISSIONS) {
+			char msg[4000];
+			if (permissions >= CHANNEL_ADMIN_PERMISSIONS) {
+				snprintf(msg, sizeof(msg), "<span style=\"color:#c4181d;\">%s</span>: %s", session[session_id]->get_name(), sanitized_string.c_str());
+			} else if (permissions >= CHANNEL_VOUCHER_PERMISSIONS) {
+				snprintf(msg, sizeof(msg), "<span style=\"color:#005bae;\">%s</span>: %s", session[session_id]->get_name(), sanitized_string.c_str());
+			} else {
+				snprintf(msg, sizeof(msg), "%s: %s", session[session_id]->get_name(), sanitized_string.c_str());
+			}
 			msg_channel(msg, strlen(msg), id, header.channel);
 		}
 	}
@@ -1795,14 +1841,14 @@ int Server::out_game(const uint32_t session_id, const uint32_t channel_id, const
 	Channel *chan = find_channel(channel_id);
 	if (chan) {
 		int found = 0;
-		for (uint32_t x = 0; x < chan->n_games; ++x) {
-			for (uint32_t y = 0; y < chan->game[x].n_signed; ++y) {
+		for (int x = 0; x < chan->n_games; ++x) {
+			for (int y = 0; y < chan->game[x].n_signed; ++y) {
 				if (chan->game[x].signed_members[y] == session[session_id]->get_user_id()) {
 					found = 1;
 					if (!chan->game[x].start_time) {
 						if (chan->game[x].hoster_id == session[session_id]->get_user_id()) {
-							for (uint32_t y = 0; y < chan->game[x].n_signed; ++y) {
-								for (uint32_t z = 0; z < n_connections; ++z ) {
+							for (int y = 0; y < chan->game[x].n_signed; ++y) {
+								for (int z = 0; z < n_connections; ++z ) {
 									if (session[z] && session[z]->get_user_id() == chan->game[x].signed_members[y]) {
 										session[z]->unsign();
 									}
@@ -1816,14 +1862,14 @@ int Server::out_game(const uint32_t session_id, const uint32_t channel_id, const
 							chan->game[x].n_forbid = 0;
 							char msg[1000];
 							snprintf(msg,sizeof(msg),"%s closed game %s.",session[session_id]->get_name(),chan->game[x].game_name);
-							msg_channel(msg, strlen(msg)+1, 0, channel_id);
+							msg_channel_as_admin(msg, strlen(msg)+1, 0, channel_id);
 							if (chan->n_unused < 50) chan->unused[chan->n_unused] = chan->game[x].game_id;
 						} else {
 							chan->game[x].n_signed--;
 							chan->game[x].signed_members[y] = chan->game[x].signed_members[chan->game[x].n_signed];
 							char msg[1000];
 							snprintf(msg,sizeof(msg),"%s signed out of game %s.",session[session_id]->get_name(),chan->game[x].game_name);
-							msg_channel(msg, strlen(msg)+1, 0, channel_id);
+							msg_channel_as_admin(msg, strlen(msg)+1, 0, channel_id);
 						}
 						update_game(channel_id, x);
 						session[session_id]->unsign();
@@ -1856,7 +1902,7 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 	Channel *chan = find_channel(channel);
 	if (chan) {
 		Game *g = &chan->game[game];
-
+		const uint8_t n_players = (chan->game_id == GAME_DOTA) ? 10 : 6;
 		if (result == 3) {
 			char msg[2000];
 			snprintf(msg, sizeof(msg), "Game %i resulted in a draw.", g->game_id);
@@ -1870,7 +1916,7 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 			query << "REPLACE INTO games (game_id, league_id, winner, rating_change) VALUES (" << g->game_id << ", " << channel << ", " << (int)result << ", " << g->rating_change << ")";
 			//printf("query: %s\n",query.str().c_str());fflush(stdout);
 			query.exec();
-			for (uint32_t x = 0; x < 10; ++x) {
+			for (int x = 0; x < n_players; ++x) {
 				mysqlpp::Query query_result = sql_connection.query();
 				const int team = (x >= 5) ? 2 : 1;
 				query_result << "REPLACE INTO game_members (game_id, league_id, user_id, team, result) VALUES (" << g->game_id << ", " << channel << ", " << g->signed_members[x] << ", " << team << ", " << (int)result << ")";
@@ -1878,14 +1924,14 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 			}
 			const int radiant_change = ((result == 1) ? 25 : -25) + g->rating_change;
 			const int dire_change = -radiant_change;
-			for (uint32_t x = 0; x < 10; ++x) {
+			for (int x = 0; x < n_players; ++x) {
 				mysqlpp::Query rating = sql_connection.query();
 				const int change = (x < 5) ? radiant_change : dire_change;
 				if (change >= 0) rating << "UPDATE league_members SET rating = rating + " << change << ", n_games = n_games + 1, n_wins = n_wins + 1 WHERE league_id = " << channel << " AND user_id = " << g->signed_members[x];
 				else rating << "UPDATE league_members SET rating = rating + " << change << ", n_games = n_games + 1 WHERE league_id = " << channel << " AND user_id = " << g->signed_members[x];
 				//printf("query: %s\n",rating.str().c_str());fflush(stdout);
 				rating.exec();
-				for (uint32_t y = 0; y < chan->n_members; ++y) { 
+				for (int y = 0; y < chan->n_members; ++y) { 
 					if (chan->members[y].id == g->signed_members[x]) {
 						if ((result == 1 && x < 5) || (result == 2 && x >= 5)) chan->members[y].rating += g->rating_change;
 						else chan->members[y].rating -= g->rating_change;
@@ -1906,13 +1952,19 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 				puts(error.c_str());
 			}
 		}
-		const char *result_str[2] = { "Radiant", "Dire" };
+		
+		const char *result_str_dota[2] = { "Radiant", "Dire" };
+		const char *result_str_blc[2] = { "Cold", "Warm" };
 		char msg[2000];
-		snprintf(msg, sizeof(msg), "Game %i ended. %s victory.", g->game_id, result_str[result-1]);
+		if (chan->game_id == GAME_DOTA) {
+			snprintf(msg, sizeof(msg), "Game %i ended. %s victory.", g->game_id, result_str_dota[result-1]);
+		} else if (chan->game_id == GAME_BLC) {
+			snprintf(msg, sizeof(msg), "Game %i ended. %s victory.", g->game_id, result_str_blc[result-1]);
+		}
 		msg_channel(msg, strlen(msg)+1, 0, channel);
 		
-		for (uint32_t x = 0; x < 10; ++x) {
-			for (uint32_t y = 0; y < n_connections; ++y) {
+		for (int x = 0; x < n_players; ++x) {
+			for (int y = 0; y < n_connections; ++y) {
 				if (session[y]->get_user_id() == g->signed_members[x]) {
 					session[y]->unsign();
 					y = n_connections;
@@ -1927,14 +1979,18 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 		
 		mysqlpp::Query get_ratings = sql_connection.query();
 		try {
-			unsigned char msg[(1+sizeof(rank_state))*10];
 			rank_state rank;
-			get_ratings << "SELECT * FROM league_members WHERE league_id = " << channel << " ORDER BY rating DESC LIMIT 10";
+			uint8_t rank_count = 0;
+			unsigned char msg[(1+sizeof(rank_state))*100];
+			get_ratings << "SELECT * FROM league_members WHERE league_id = " << channel << " ORDER BY rating DESC LIMIT 25";
 			mysqlpp::StoreQueryResult result = get_ratings.store();
-			for (uint32_t x = 0; x < result.num_rows(); ++x) {
+			rank_count = result.num_rows();
+			if (!rank_count) return;
+			for (int x = 0; x < result.num_rows(); ++x) {
 				mysqlpp::Query get_user = sql_connection.query();
 				get_user << "SELECT * FROM users WHERE id = " << result[x]["user_id"];
 				mysqlpp::StoreQueryResult user = get_user.store();
+				memset(&rank, 0, sizeof(rank));
 				rank.position = x;
 				rank.rating = result[x]["rating"];
 				rank.channel = channel;
@@ -1943,8 +1999,8 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 				msg[(1+sizeof(rank_state))*x] = SERVER_MESSAGE_CHANNEL_UPDATE_LEADERBOARDS;
 				memcpy(&msg[1+((1+sizeof(rank_state))*x)], &rank, sizeof(rank));
 			}
-			for (uint32_t x = 0; x < chan->n_members; ++x) {
-				chan->members[x].ptr->send_raw(msg, (1+sizeof(rank))*10);
+			for (int x = 0; x < chan->n_members; ++x) {
+				chan->members[x].ptr->send_raw(msg, (1+sizeof(rank))*rank_count);
 			}
 		} catch (mysqlpp::BadQuery error) {
 			char buffer[2048];
@@ -1954,10 +2010,10 @@ void Server::result_game(const uint16_t channel, const uint32_t game, const uint
 	}
 }
 
-void Server::command(const int session_id, unsigned char *msg, const uint32_t msglen) {
+void Server::command(const int session_id, unsigned char *msg, const int msglen) {
 	unsigned char chunk[RECV_MAXLEN*2];
 	// check if we have buffered data from a previous recv() call.
-	uint32_t buffer_len, remaining_length = msglen;
+	int buffer_len, remaining_length = msglen;
 	unsigned char *buffer = session[session_id]->get_buffer(&buffer_len);
 	if (buffer_len) {
 		memcpy(chunk, buffer, buffer_len);
@@ -1976,6 +2032,17 @@ void Server::command(const int session_id, unsigned char *msg, const uint32_t ms
 					auth_user(session_id, authinfo);
 					remaining_length -= (1 + sizeof(user_login_msg));
 					position = &position[1+sizeof(user_login_msg)];
+				} else {
+					goto buffer_remaining_data;
+				}
+				break;
+				
+			case CLIENT_MESSAGE_REQUEST_USER_INFO:
+				if (remaining_length > sizeof(uint32_t)) {
+					uint32_t requested_id = *(uint32_t*)&position[1];
+					
+					remaining_length -= (1 + sizeof(uint32_t));
+					position = &position[1+sizeof(uint32_t)];
 				} else {
 					goto buffer_remaining_data;
 				}
@@ -2015,8 +2082,10 @@ void Server::command(const int session_id, unsigned char *msg, const uint32_t ms
 		}
 	}
 	session[session_id]->touch(server_time);
+	// it's like im an openssl contributor or something
 	if (0) {
 		buffer_remaining_data:
+		printf("Buffering remaining %i bytes. header is %i\n",remaining_length, position[0]);
 		if (remaining_length > RECV_MAXLEN) {
 			disconnect_session(session_id, SERVER_MESSAGE_DISCONNECT_PROTOCOL_ERROR);
 		} else {
@@ -2032,7 +2101,7 @@ void Server::force_shutdown() {
 }
 
 int Server::find_session(const char *name, uint32_t *out_session) {
-	for (uint32_t x = 0; x < n_connections; ++x) {
+	for (int x = 0; x < n_connections; ++x) {
 		if (session[x]) {
 			if (strcmp(name, session[x]->get_name()) == 0) {
 				*out_session = x;

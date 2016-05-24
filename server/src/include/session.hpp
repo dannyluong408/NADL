@@ -45,7 +45,7 @@ public:
 	int server_msg(const char *message, const int len);
 	int msg(const char *message, const int len, const uint32_t sender, const uint16_t channel);
 	
-	unsigned char *get_buffer(uint32_t *len);
+	unsigned char *get_buffer(int *len);
 	char *get_name();
 	uint64_t get_last_update() const;
 	uint32_t get_user_id() const;

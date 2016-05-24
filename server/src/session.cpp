@@ -96,7 +96,7 @@ void Session::disconnect(const uint8_t disconnect_msg) {
 	close(sockfd);
 }
 
-unsigned char *Session::get_buffer(uint32_t *len) {
+unsigned char *Session::get_buffer(int *len) {
 	*len = buffer_pos;
 	if (!buffer_pos) return NULL;
 	else return buffer;

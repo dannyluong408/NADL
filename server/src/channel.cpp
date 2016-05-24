@@ -2,17 +2,21 @@
 
 Channel *Server::find_channel(const uint16_t channel_id) {
 	if (!channel_id) return NULL;
-	
-	if (channels.find(channel_id) != channels.end()) {
+	if (channel_id > n_channels) return NULL;
+	// 0 is reserved for non-channel stuff
+	//return channel_data[channel_id-1];
+	std::map<uint16_t,Channel*>::iterator i = channels.find(channel_id);
+	if (i != channels.end()) {
 		return channels[channel_id];
 	}
+	
 	return NULL;
 }
 
 int Server::remove_user_from_channel(const uint32_t user_id, const uint16_t channel_id) {
 	Channel *chan = find_channel(channel_id);
 	if (chan) {
-		for (uint32_t x = 0; x < chan->n_members; ++x) {
+		for (int x = 0; x < chan->n_members; ++x) {
 			if (chan->members[x].id == user_id) {
 				char msg[1000];
 				snprintf(msg, sizeof(msg), "%s left the channel.", chan->members[x].ptr->get_name());
@@ -28,7 +32,7 @@ int Server::remove_user_from_channel(const uint32_t user_id, const uint16_t chan
 				
 				remuser[0] = SERVER_MESSAGE_CHANNEL_REMOVE_USER;
 				memcpy(&remuser[1], &update, sizeof(update));
-				for (uint32_t y = 0; y < chan->n_members; ++y) {
+				for (int y = 0; y < chan->n_members; ++y) {
 					chan->members[y].ptr->send_raw(remuser, 1+sizeof(update));
 				}
 				return 1;
@@ -48,7 +52,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 			char user_join_msg[1000];
 			snprintf(user_join_msg, sizeof(user_join_msg), "%s joined the channel.", session[session_id]->get_name());
 			const int len = strlen(user_join_msg)+1;
-			for (uint32_t x = 0; x < chan->n_members; ++x) {
+			for (int x = 0; x < chan->n_members; ++x) {
 				chan->members[x].ptr->msg(user_join_msg, len, 0, channel_id);
 			}
 			
@@ -74,7 +78,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 			strncpy(add_info.voucher_name, voucher, sizeof(add_info.voucher_name));
 			
 			memcpy(&add_msg[1], &add_info, sizeof(add_info));
-			for (uint32_t x = 0; x < chan->n_members; ++x) {
+			for (int x = 0; x < chan->n_members; ++x) {
 				chan->members[x].ptr->send_raw(add_msg, 1 + sizeof(add_info));
 			}
 		
@@ -90,7 +94,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 			chan->members[chan->n_members].warn_level = warn_level;
 			chan->members[chan->n_members].rating = rating;
 			chan->n_members++;
-			for (uint32_t x = 0; x < chan->n_members; ++x) {
+			for (int x = 0; x < chan->n_members; ++x) {
 				add_info.rating = chan->members[x].rating;
 				add_info.permissions = chan->members[x].permission;
 				add_info.warn_level = chan->members[x].warn_level;
@@ -104,7 +108,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 				memcpy(&add_msg[1], &add_info, sizeof(add_info));
 				session[session_id]->send_raw(add_msg, 1+sizeof(add_info));
 			}
-			for (uint32_t x = 0; x < chan->n_games; ++x) {
+			for (int x = 0; x < chan->n_games; ++x) {
 				game_state new_state;
 				new_state.league_id = channel_id;
 				new_state.game_id = game_id;
@@ -112,6 +116,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 				memset(new_state.host_name, 0, sizeof(new_state.host_name));
 
 				new_state.n_users = chan->game[game_id].n_signed;
+				new_state.n_max = (chan->game_id == GAME_DOTA) ? 10 : 6;
 				new_state.start_time = chan->game[game_id].start_time;
 				strcpy(new_state.game_name, chan->game[game_id].game_name);
 				
@@ -126,7 +131,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 				memcpy(&msg[1], &new_state, sizeof(new_state));
 				session[session_id]->send_raw(msg, 1+sizeof(new_state));
 			}
-			for (uint32_t x = 0; x < chan->n_games; ++x) {
+			for (int x = 0; x < chan->n_games; ++x) {
 				game_state new_state;
 				new_state.league_id = channel_id;
 				new_state.game_id = x;
@@ -154,7 +159,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 				get_ratings << "SELECT * FROM league_members WHERE league_id = " << channel_id << " ORDER BY rating DESC LIMIT 10";
 				mysqlpp::StoreQueryResult result = get_ratings.store();
 				const int size = result.num_rows();
-				for (uint32_t x = 0; x < result.num_rows(); ++x) {
+				for (int x = 0; x < result.num_rows(); ++x) {
 					mysqlpp::Query get_user = sql_connection.query();
 					get_user << "SELECT * FROM users WHERE id = " << result[x]["user_id"];
 					mysqlpp::StoreQueryResult user = get_user.store();
@@ -167,7 +172,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 					msg[(1+sizeof(rank_state))*x] = SERVER_MESSAGE_CHANNEL_UPDATE_LEADERBOARDS;
 					memcpy(&msg[1+((1+sizeof(rank_state))*x)], &rank, sizeof(rank));
 				}
-				//for (uint32_t x = 0; x < chan->n_members; ++x) {
+				//for (int x = 0; x < chan->n_members; ++x) {
 					session[session_id]->send_raw(msg, (1+sizeof(rank))*size);
 				//}
 			} catch (mysqlpp::BadQuery error) {
@@ -182,7 +187,7 @@ void Server::add_user_to_channel(const uint32_t session_id, const uint16_t chann
 uint8_t Server::get_user_active_channel_permissions(const uint32_t user_id, const uint16_t channel_id) {
 	Channel *chan = find_channel(channel_id);
 	if (chan) {
-		for (uint32_t x = 0; x < chan->n_members; ++x) {
+		for (int x = 0; x < chan->n_members; ++x) {
 			if (chan->members[x].id == user_id) return chan->members[x].permission;
 		}
 	}
@@ -216,13 +221,15 @@ uint16_t Server::search_channel(const char *name) {
 }
 
 int Server::user_channel_lookup(const uint32_t user_id, const uint16_t channel_id, uint8_t *permission_out, uint16_t *warn_level, char *voucher, uint16_t *rating) {
+	Channel *chan = find_channel(channel_id);
+	if (!chan) return 0;
 	startquery:
 	mysqlpp::Query query = sql_connection.query();
 	query << "SELECT * FROM league_members WHERE user_id=" << user_id << " AND league_id=" << channel_id << " LIMIT 1";
 	try {
 		mysqlpp::StoreQueryResult result = query.store();
 		if (!result || !result.num_rows()) {
-			if (channels[channel_id]->flags & CHANNEL_FLAG_CHANNEL_IS_INVITE_ONLY) return 0;
+			if (chan->flags & CHANNEL_FLAG_CHANNEL_IS_INVITE_ONLY) return 0;
 			else {
 				// add a new user. this league doesn't require invites.
 				mysqlpp::Query new_user = sql_connection.query();
@@ -259,7 +266,7 @@ int Server::user_channel_lookup(const uint32_t user_id, const uint16_t channel_i
 		}
 	}
 }
-void Server::add_channel(const char *name, const uint8_t flags, const uint16_t id, const uint32_t owner_id, const uint32_t number_of_games) {
+void Server::add_channel(const char *name, const uint8_t flags, const uint16_t id, const uint32_t owner_id, const uint32_t number_of_games, const uint8_t game_id) {
 	Channel **ptr = (Channel**)malloc(sizeof(Channel*)*(n_channels+1));
 	memcpy(ptr, channel_data, sizeof(Channel*)*n_channels);
 	ptr[n_channels] = (Channel*)malloc(sizeof(Channel));
@@ -273,6 +280,7 @@ void Server::add_channel(const char *name, const uint8_t flags, const uint16_t i
 	ptr[n_channels]->n_games = 0;
 	ptr[n_channels]->n_unused = 0;
 	ptr[n_channels]->channel_id = id;
+	ptr[n_channels]->game_id = game_id;
 	channels[id] = ptr[n_channels];
 	free(channel_data);
 	channel_data = ptr;
@@ -282,7 +290,7 @@ void Server::add_channel(const char *name, const uint8_t flags, const uint16_t i
 Member *Server::find_member(const uint32_t user_id, const uint16_t channel_id) {
 	Channel *chan = find_channel(channel_id);
 	if (chan) {
-		for (uint32_t x = 0; x < chan->n_members; ++x) {
+		for (int x = 0; x < chan->n_members; ++x) {
 			if (chan->members[x].id == user_id) return &chan->members[x];
 		}
 	}
@@ -293,8 +301,26 @@ int Server::msg_channel(const char *msg, const uint16_t len, const uint32_t send
 	Channel *chan = find_channel(channel);
 	if (chan) {
 		int success = 0;
-		for (uint32_t x = 0; x < chan->n_members; ++x) {
+		for (int x = 0; x < chan->n_members; ++x) {
 			success += chan->members[x].ptr->msg(msg, len, sender, channel);
+		}
+		return success;
+	}
+	return 0;
+}
+
+int Server::msg_channel_as_admin(const char *msg, const uint16_t len, const uint32_t sender, const uint16_t channel) {
+	Channel *chan = find_channel(channel);
+	if (chan) {
+		const char *color = "<span style=\"color:#57623c;\">";
+		const char *color2 = "</span>";
+		// len should already include the null-terminator
+		const int maxlen = len + strlen(color) + strlen(color2);
+		char *colored_msg = (char*)malloc(maxlen);
+		snprintf(colored_msg, maxlen, "%s%s%s", color, msg, color2);
+		int success = 0;
+		for (int x = 0; x < chan->n_members; ++x) {
+			success += chan->members[x].ptr->msg(colored_msg, maxlen, sender, channel);
 		}
 		return success;
 	}

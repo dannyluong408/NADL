@@ -45,16 +45,17 @@ std::string Server::sanitize_string(char *msg) {
 	}
 	std::string str = msg; // convert to std::string for return
 	// escape potential user formatting
-	for (uint32_t x = 0; x < str.length(); ++x) {
+	for (int x = 0; x < str.length(); ++x) {
 		// this doesnt work
 		
 		if (str.at(x) == '<') {
-			str = str.substr(0, x) + "&lt" + str.substr(x+1, str.length());
-			x += 2;
+			str = str.substr(0, x) + "&lt;" + str.substr(x+1, str.length());
+			x += 3;
 		} else if (str.at(x) == '>') {
-			str = str.substr(0, x) + "&gt" + str.substr(x+1, str.length());
-			x += 2;
+			str = str.substr(0, x) + "&gt;" + str.substr(x+1, str.length());
+			x += 3;
 		}
+		
 	}
 	
 	return str;
