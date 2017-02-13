@@ -58,30 +58,6 @@ struct Channel {
     int current_history;
 };
 
-//What is this class ??? dont think its being used
-//class KeyboardFilter : public QObject
-//{
-//public:
-//  KeyboardFilter( QObject *parent = 0 ) : QObject( parent ) {}
-
-//protected:
-//  bool eventFilter( QObject *dist, QEvent *event )
-//  {
-//    if( event->type() == QEvent::KeyPress )
-//    {
-//      QKeyEvent *keyEvent = static_cast<QKeyEvent*>( event );
-//      printf("Keyevent detected\n");
-//      fflush(stdout);
-//      if( QString("1234567890").indexOf( keyEvent->text() ) != -1 )
-//        return true;
-//    }
-
-//    return false;
-//  }
-//};
-
-
-
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
