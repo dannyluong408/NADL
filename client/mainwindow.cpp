@@ -47,19 +47,6 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     connect(this, SIGNAL(enterPressed()),this,SLOT(skipHigh()));
     connect(this, SIGNAL(upArrow()),this,SLOT(moveUp()));
     connect(this, SIGNAL(downArrow()),this,SLOT(moveDown()));
-    //messing around with completer
-    /*
-    QStringList temp;
-    QCompleter *completer = new QCompleter(temp, this);
-    completer->setCaseSensitivity(Qt::CaseInsensitive);
-    completer->setCompletionMode(QCompleter::InlineCompletion);
-    ui->chat_input->setCompleter(completer);
-    temp << "beta";
-    temp.clear();
-    temp << "test";
-    completer = new QCompleter(temp, this);
-    ui->chat_input->setCompleter(completer);
-*/
 
     ui->actionMute_Sounds->setCheckable(true);
 
@@ -164,7 +151,7 @@ void MainWindow::moveUp(){
     }
 }
 
-void MainWindow::updateCompleter(){
+void MainWindow::updateCompleter() {
     int tab_index = ui->tabs->currentIndex();
 
     if (tab_index == 0){
@@ -183,15 +170,6 @@ void MainWindow::updateCompleter(){
     completer->setCaseSensitivity(Qt::CaseInsensitive);
     completer->setCompletionMode(QCompleter::InlineCompletion);
     ui->chat_input->setCompleter(completer);
-
-
-    /*
-    QStringList test;
-    for(int i = 0; i < ((channel[tab_index-1]->channel_data->user_lists->count()) ); i++){
-        test << (channel[tab_index-1]->channel_data->user_lists->item(i)->text() );
-    }
-    qDebug() << test;
-    */
 }
 
 bool MainWindow::eventFilter(QObject *obj, QEvent *event)
@@ -411,17 +389,6 @@ Widget_Pointers *MainWindow::createTab(QWidget *tab_x){
     user_list_x->setMinimumWidth(125);
     user_list_x->setMaximumWidth(125);
 
-    /*set background colors of widgets
-    textBrowser_x->setStyleSheet("background-color: grey;"
-                                 "font: 10pt;");
-    user_list_x->setStyleSheet("background-color: grey;"
-                               "font: 8pt;");
-    listWidget_x->setStyleSheet("background-color: grey;"
-                                "font: 8pt;");
-    listWidget_y->setStyleSheet("background-color: grey;"
-                                "font: 8pt;");
-    */
-
     //double click games_list
     connect(listWidget_x, SIGNAL(itemDoubleClicked(QListWidgetItem*)), this, SLOT(itemDoubleClicked(QListWidgetItem*)));
 
@@ -479,12 +446,10 @@ void MainWindow::addItem() {
     container[tab_index].user_lists->addItem(QString::number(++i));
 }*/
 
-// what the fuck is this
 /*
 void MainWindow::compareItem() {
     int tab_index = ui->tabs->currentIndex();
     tab_index--;
-
 }*/
 
 void MainWindow::enter_chat() {
