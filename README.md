@@ -4,7 +4,7 @@ NADL is a Dota 2 Inhouse League Client/Server that has multiple chat channels an
 
 Tech Stack: C/C++ , Qt Frameworks, connection via SSL TCP
 
-Functionality:<br>
+<b>Functionality:</b><br>
 Login tab to login with credentials and ability to save password for future logins<br>
 Tabs will dynamically be created depending on what leagues ur account has access to in addition to the open league<br>
 Displays all users currently in the channel on the sidebar list.<br>
