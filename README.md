@@ -1,6 +1,6 @@
 # NADL
 
-NADL ia  Dota 2 Inhouse League Client/Server that has multiple chat channels and functionality to create organized games within.
+NADL is a Dota 2 Inhouse League Client/Server that has multiple chat channels and functionality to create organized games within.
 
 Tech Stack: C/C++ , Qt Frameworks, connection via SSL TCP
 
