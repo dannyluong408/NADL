@@ -14,3 +14,6 @@ Chat history implemented with up and down arrows to be able to quickly resend pa
 Tab autocomplete functionality for input text to tab autocomplete usernames in the current channel
 
 
+
+Frontend by: https://github.com/dannyluong408
+Backend by: https://github.com/mylesonine
